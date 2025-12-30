@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AppStatus } from './types';
 import RainbowButton from './components/RainbowButton';
@@ -15,17 +14,55 @@ const App: React.FC = () => {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // new: keep available voices
+  const voicesRef = useRef<SpeechSynthesisVoice[] | null>(null);
+  useEffect(() => {
+    const loadVoices = () => {
+      voicesRef.current = window.speechSynthesis.getVoices();
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  // new: speak helper that returns a Promise
+  const speak = (text: string) => {
+    return new Promise<void>((resolve) => {
+      if (!('speechSynthesis' in window)) {
+        resolve();
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(text);
+      const voices = voicesRef.current && voicesRef.current.length ? voicesRef.current : window.speechSynthesis.getVoices();
+      // prefer Google-branded voices when available
+      const preferred = voices.find(v => /google/i.test(v.name)) || voices[0];
+      if (preferred) utter.voice = preferred;
+      // small tweaks (optional)
+      utter.rate = 1;
+      utter.pitch = 1;
+      utter.onend = () => resolve();
+      utter.onerror = () => resolve();
+      // cancel any in-progress TTS before speaking
+      try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+      window.speechSynthesis.speak(utter);
+    });
+  };
+
   const startWorkout = async () => {
     if (roundsInput < 1) return;
     setAudioError(null);
 
     if (audioRef.current) {
       try {
+        // announce round first, then play audio
+        setCurrentRound(1);
+        await speak(`Round ${1}.`);
         // Reset state and attempt play
         audioRef.current.currentTime = 0;
         await audioRef.current.play();
-        
-        setCurrentRound(1);
+
         setStatus(AppStatus.PLAYING);
         setProgress(0);
       } catch (err: any) {
@@ -37,7 +74,7 @@ const App: React.FC = () => {
 console.log(`⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀
 ⠀⠀⠀⠀⢀⡴⣆⠀⠀⠀⠀⠀⣠⡀⠀⠀⠀⠀⠀⠀⣼⣿⡗⠀⠀⠀⠀
 ⠀⠀⠀⣠⠟⠀⠘⠷⠶⠶⠶⠾⠉⢳⡄⠀⠀⠀⠀⠀⣧⣿⠀⠀⠀⠀⠀
-⠀⠀⣰⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣤⣤⣤⣤⣤⣿⢿⣄⠀⠀⠀⠀
+⠀⠀⣰⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣤⣤⣤⣤⣤⣤⣿⢿⣄⠀⠀⠀⠀
 ⠀⠀⡇⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣧⠀⠀⠀⠀⠀⠀⠙⣷⡴⠶⣦
 ⠀⠀⢱⡀⠀⠉⠉⠀⠀⠀⠀⠛⠃⠀⢠⡟⠂⠀⠀⢀⣀⣠⣤⠿⠞⠛⠋
 ⣠⠾⠋⠙⣶⣤⣤⣤⣤⣤⣀⣠⣤⣾⣿⠴⠶⠚⠋⠉⠁⠀⠀⠀⠀⠀⠀
@@ -65,16 +102,21 @@ console.log(`⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀�
     }
   }, []);
 
-  const handleAudioEnded = () => {
+  // make handler async so we can announce next round before playing
+  const handleAudioEnded = async () => {
     if (currentRound < roundsInput) {
       const nextRound = currentRound + 1;
       setCurrentRound(nextRound);
       if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(err => {
+        // announce next round, then restart audio
+        try {
+          await speak(`Round ${nextRound}.`);
+          audioRef.current.currentTime = 0;
+          await audioRef.current.play();
+        } catch (err: any) {
           console.error("Round transition failed:", err?.message);
           setAudioError("Auto-play blocked for next round.");
-        });
+        }
       }
     } else {
       setStatus(AppStatus.COMPLETED);
