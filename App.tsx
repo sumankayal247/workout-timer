@@ -17,9 +17,13 @@ const App: React.FC = () => {
   // new: keep available voices
   const voicesRef = useRef<SpeechSynthesisVoice[] | null>(null);
   useEffect(() => {
+    // Guard against environments / browsers that don't support Speech Synthesis
+    if (!('speechSynthesis' in window)) return;
+
     const loadVoices = () => {
       voicesRef.current = window.speechSynthesis.getVoices();
     };
+
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
     return () => {
