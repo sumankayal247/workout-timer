@@ -1,0 +1,7 @@
+{
+  "name": "Semi working Exercise Timer",
+  "description": "A minimalistic modern exercise app that plays an audio file for a specified number of rounds with a sleek white and gray aesthetic and rainbow-bordered buttons.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
